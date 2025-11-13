@@ -46,20 +46,22 @@ rooms_df = st.session_state.rooms
 
 # ================== SIDEBAR MENU ==================
 st.sidebar.title("🏨 Hotel Menu")
-menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Check-Out", "Available Rooms", "All Guests"])
+menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Check-Out", "Analytics"])
 
 # ================== DASHBOARD ==================
 if menu == "Dashboard":
     st.title("🏨 Hotel Management Dashboard")
 
     total_rooms = len(rooms_df)
-    occupied = (rooms_df["Status"].isin(["Occupied", "Booked"])).sum()
-    available = total_rooms - occupied
+    occupied = (rooms_df["Status"] == "Occupied").sum()
+    booked = (rooms_df["Status"] == "Booked").sum()
+    available = total_rooms - occupied - booked
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Rooms", total_rooms)
-    col2.metric("Occupied/Booked", occupied)
-    col3.metric("Available", available)
+    col2.metric("Occupied", occupied)
+    col3.metric("Booked (Future)", booked)
+    col4.metric("Available", available)
 
     st.dataframe(rooms_df)
 
@@ -95,7 +97,6 @@ elif menu == "Register Guest":
             try:
                 existing_checkin = datetime.strptime(existing_checkin, "%Y-%m-%d").date()
                 existing_checkout = datetime.strptime(existing_checkout, "%Y-%m-%d").date()
-                # Only conflict if periods overlap
                 overlap = (checkin_date < existing_checkout) and (checkout_date > existing_checkin)
             except Exception:
                 overlap = False
@@ -103,7 +104,6 @@ elif menu == "Register Guest":
         if rooms_df.loc[idx, "Status"] in ["Occupied", "Booked"] and overlap:
             st.error("⚠️ This room is already booked or occupied during that period!")
         else:
-            # ✅ Allow booking if no overlap (even if current guest still there)
             status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
 
             rooms_df.loc[idx, :] = [
@@ -163,21 +163,52 @@ elif menu == "Check-Out":
                 st.session_state.rooms = rooms_df
                 st.success(f"✅ Room {room_number} checked out successfully!")
 
-# ================== AVAILABLE ROOMS ==================
-elif menu == "Available Rooms":
-    st.title("🟩 Available Rooms")
+# ================== ANALYTICS ==================
+elif menu == "Analytics":
+    st.title("📊 Room Analytics")
 
-    today = pd.Timestamp(datetime.today().date())
-    checkout_dates = pd.to_datetime(rooms_df["Check-out Date"], errors='coerce')
+    today = datetime.today().date()
+    rooms_df["Check-in Date"] = pd.to_datetime(rooms_df["Check-in Date"], errors='coerce')
+    rooms_df["Check-out Date"] = pd.to_datetime(rooms_df["Check-out Date"], errors='coerce')
+
+    # 1️⃣ Available Now
     available_now = rooms_df[
         (rooms_df["Status"] == "Available") |
-        (checkout_dates < today)
+        (rooms_df["Check-out Date"] < pd.Timestamp(today))
     ]
 
-    st.write(f"Currently available rooms: **{len(available_now)}**")
-    st.dataframe(available_now[["Room Number", "Status", "Guest Name", "Check-out Date"]])
+    # 2️⃣ Currently Occupied
+    occupied_now = rooms_df[
+        (rooms_df["Status"] == "Occupied") &
+        (rooms_df["Check-in Date"] <= pd.Timestamp(today)) &
+        (rooms_df["Check-out Date"] >= pd.Timestamp(today))
+    ]
 
-# ================== ALL GUESTS ==================
-elif menu == "All Guests":
-    st.title("👥 All Guests Records")
-    st.dataframe(rooms_df)
+    # 3️⃣ Future Bookings
+    future_bookings = rooms_df[
+        (rooms_df["Status"] == "Booked") &
+        (rooms_df["Check-in Date"] > pd.Timestamp(today))
+    ]
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🟩 Available Now", len(available_now))
+    col2.metric("🏠 Occupied Now", len(occupied_now))
+    col3.metric("📅 Future Bookings", len(future_bookings))
+
+    st.subheader("🟩 Available Rooms")
+    st.dataframe(available_now[["Room Number", "Status", "Check-out Date"]])
+
+    st.subheader("🏠 Occupied Rooms")
+    st.dataframe(occupied_now[["Room Number", "Guest Name", "Check-in Date", "Check-out Date", "Remaining"]])
+
+    st.subheader("📅 Future Bookings")
+    st.dataframe(future_bookings[["Room Number", "Guest Name", "Check-in Date", "Check-out Date"]])
+
+    st.divider()
+    st.write("### Summary Statistics")
+    st.bar_chart(
+        pd.DataFrame({
+            "Rooms": ["Available", "Occupied", "Future Booked"],
+            "Count": [len(available_now), len(occupied_now), len(future_bookings)]
+        }).set_index("Rooms")
+    )
