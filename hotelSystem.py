@@ -12,6 +12,9 @@ if "rooms" not in st.session_state:
         "Status": ["Available"] * 30,
         "Guest Name": [None] * 30,
         "ID/Passport": [None] * 30,
+        "Address": [None] * 30,
+        "Job": [None] * 30,
+        "Nationality": [None] * 30,
         "Nights": [None] * 30,
         "Check-in": [None] * 30,
         "Check-out": [None] * 30,
@@ -61,6 +64,9 @@ elif menu == "Register Guest":
                 room_number = st.selectbox("Select Room Number", available_rooms)
                 guest_name = st.text_input("Guest Name")
                 guest_id = st.text_input("ID or Passport Number")
+                address = st.text_input("Address")
+                job = st.text_input("Job")
+                nationality = st.text_input("Nationality")
                 nights = st.number_input("Number of Nights", min_value=1, max_value=30, step=1)
             
             with col2:
@@ -80,6 +86,9 @@ elif menu == "Register Guest":
                 "Occupied",
                 guest_name,
                 guest_id,
+                address,
+                job,
+                nationality,
                 nights,
                 checkin_date.strftime("%Y-%m-%d"),
                 checkout_date.strftime("%Y-%m-%d"),
@@ -109,6 +118,9 @@ elif menu == "Check-out Guest":
             st.session_state.rooms.loc[idx, :] = [
                 room_number,
                 "Available",
+                None,
+                None,
+                None,
                 None,
                 None,
                 None,
