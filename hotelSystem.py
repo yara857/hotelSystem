@@ -57,47 +57,46 @@ elif menu == "Register Guest":
     if not available_rooms:
         st.warning("❌ No rooms available.")
     else:
-        with st.form("register_form"):
-            col1, col2 = st.columns(2)
+        # Live interactive form
+        room_number = st.selectbox("Select Room Number", available_rooms)
+        guest_name = st.text_input("Guest Name")
+        guest_id = st.text_input("ID or Passport Number")
+        address = st.text_input("Address")
+        job = st.text_input("Job")
+        nationality = st.text_input("Nationality")
+        nights = st.number_input("Number of Nights", min_value=1, max_value=30, step=1)
+        checkin_date = st.date_input("Check-in Date", datetime.today())
 
-            with col1:
-                room_number = st.selectbox("Select Room Number", available_rooms)
-                guest_name = st.text_input("Guest Name")
-                guest_id = st.text_input("ID or Passport Number")
-                address = st.text_input("Address")
-                job = st.text_input("Job")
-                nationality = st.text_input("Nationality")
-                nights = st.number_input("Number of Nights", min_value=1, max_value=30, step=1)
-            
-            with col2:
-                checkin_date = st.date_input("Check-in Date", datetime.today())
-                checkout_date = checkin_date + timedelta(days=nights)
-                st.write("**Check-out Date:**", checkout_date)
-                total_price = st.number_input("Total Cost (EGP)", min_value=0.0, step=100.0)
-                paid = st.number_input("Paid Amount (EGP)", min_value=0.0, step=100.0)
-                remaining = total_price - paid
+        # ✅ Dynamic checkout date calculation
+        checkout_date = checkin_date + timedelta(days=int(nights))
+        st.info(f"🗓️ Check-out Date: **{checkout_date.strftime('%Y-%m-%d')}**")
 
-            submitted = st.form_submit_button("Register Guest")
+        total_price = st.number_input("Total Cost (EGP)", min_value=0.0, step=100.0)
+        paid = st.number_input("Paid Amount (EGP)", min_value=0.0, step=100.0)
+        remaining = total_price - paid
 
-        if submitted:
-            idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-            st.session_state.rooms.loc[idx, :] = [
-                room_number,
-                "Occupied",
-                guest_name,
-                guest_id,
-                address,
-                job,
-                nationality,
-                nights,
-                checkin_date.strftime("%Y-%m-%d"),
-                checkout_date.strftime("%Y-%m-%d"),
-                paid,
-                total_price,
-                remaining
-            ]
-            st.success(f"✅ Guest {guest_name} registered in Room {room_number}.")
-            st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
+        if st.button("Register Guest"):
+            if not guest_name or not guest_id:
+                st.error("Please fill in all required fields (Name and ID/Passport).")
+            else:
+                idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+                st.session_state.rooms.loc[idx, :] = [
+                    room_number,
+                    "Occupied",
+                    guest_name,
+                    guest_id,
+                    address,
+                    job,
+                    nationality,
+                    nights,
+                    checkin_date.strftime("%Y-%m-%d"),
+                    checkout_date.strftime("%Y-%m-%d"),
+                    paid,
+                    total_price,
+                    remaining
+                ]
+                st.success(f"✅ Guest {guest_name} registered in Room {room_number}.")
+                st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
 
 # === Check-out Guest ===
 elif menu == "Check-out Guest":
@@ -110,8 +109,14 @@ elif menu == "Check-out Guest":
         room_number = st.selectbox("Select Room Number to Check-out", occupied_rooms)
         guest_info = rooms_df.loc[rooms_df["Room Number"] == room_number].iloc[0]
 
-        st.write(f"**Guest:** {guest_info['Guest Name']}")
-        st.write(f"**Remaining to Pay:** {guest_info['Remaining']} EGP")
+        st.write(f"**Guest Name:** {guest_info['Guest Name']}")
+        st.write(f"**ID/Passport:** {guest_info['ID/Passport']}")
+        st.write(f"**Address:** {guest_info['Address']}")
+        st.write(f"**Job:** {guest_info['Job']}")
+        st.write(f"**Nationality:** {guest_info['Nationality']}")
+        st.write(f"**Check-in:** {guest_info['Check-in']}")
+        st.write(f"**Check-out:** {guest_info['Check-out']}")
+        st.write(f"**Remaining Balance:** {guest_info['Remaining']} EGP")
 
         if st.button("Confirm Check-out"):
             idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
