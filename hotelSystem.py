@@ -85,28 +85,48 @@ elif menu == "Register Guest":
 
     if st.button("Register Guest"):
         idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-        status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
 
-        rooms_df.loc[idx, :] = [
-            room_number,
-            status,
-            guest_name,
-            guest_id,
-            address,
-            job,
-            nationality,
-            nights,
-            checkin_date.strftime("%Y-%m-%d"),
-            checkout_date.strftime("%Y-%m-%d"),
-            paid,
-            total_price,
-            remaining
-        ]
+        # === 🧠 Check for overlapping booking ===
+        existing_checkin = rooms_df.loc[idx, "Check-in Date"]
+        existing_checkout = rooms_df.loc[idx, "Check-out Date"]
 
-        save_data(rooms_df)
-        st.session_state.rooms = rooms_df
-        st.success(f"✅ Guest {guest_name} registered for Room {room_number}.")
-        st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
+        if existing_checkin and existing_checkout:
+            try:
+                existing_checkin = datetime.strptime(existing_checkin, "%Y-%m-%d").date()
+                existing_checkout = datetime.strptime(existing_checkout, "%Y-%m-%d").date()
+                # Overlap rule: if new checkin < existing checkout and new checkout > existing checkin
+                overlap = (checkin_date < existing_checkout) and (checkout_date > existing_checkin)
+            except Exception:
+                overlap = False
+        else:
+            overlap = False
+
+        if rooms_df.loc[idx, "Status"] in ["Occupied", "Booked"] and overlap:
+            st.error("⚠️ This room is already booked or occupied during that period!")
+        else:
+            # Assign booking
+            status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
+
+            rooms_df.loc[idx, :] = [
+                room_number,
+                status,
+                guest_name,
+                guest_id,
+                address,
+                job,
+                nationality,
+                nights,
+                checkin_date.strftime("%Y-%m-%d"),
+                checkout_date.strftime("%Y-%m-%d"),
+                paid,
+                total_price,
+                remaining
+            ]
+
+            save_data(rooms_df)
+            st.session_state.rooms = rooms_df
+            st.success(f"✅ Guest {guest_name} registered for Room {room_number}.")
+            st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
 
 # ================== CHECK-OUT ==================
 elif menu == "Check-Out":
@@ -136,7 +156,7 @@ elif menu == "Check-Out":
             if new_remaining > 0:
                 st.warning(f"⚠️ Guest still owes {new_remaining:.2f} EGP.")
             else:
-                # clear room info
+                # Clear room info
                 rooms_df.loc[idx, :] = [
                     room_number, "Available", "", "", "", "", "", 0, "", "", 0.0, 0.0, 0.0
                 ]
@@ -162,4 +182,3 @@ elif menu == "Available Rooms":
 elif menu == "All Guests":
     st.title("👥 All Guests Records")
     st.dataframe(rooms_df)
-
