@@ -1,6 +1,6 @@
 Room Number,Status,Guest Name,ID/Passport,Address,Job,Nationality,Nights,Check-in Date,Check-out Date,Paid,Total Cost,Remaining
 1,Available,,,,,,0,,,0.0,0.0,0.0
-2,Booked,yeara,2548,alex,grg,grg,5,2025-11-14,2025-11-19,750.0,1000.0,250.0
+2,Available,,,,,,0,,,0.0,0.0,0.0
 3,Available,,,,,,0,,,0.0,0.0,0.0
 4,Available,,,,,,0,,,0.0,0.0,0.0
 5,Available,,,,,,0,,,0.0,0.0,0.0
@@ -29,3 +29,4 @@ Room Number,Status,Guest Name,ID/Passport,Address,Job,Nationality,Nights,Check-i
 28,Available,,,,,,0,,,0.0,0.0,0.0
 29,Available,,,,,,0,,,0.0,0.0,0.0
 30,Available,,,,,,0,,,0.0,0.0,0.0
+
