@@ -7,12 +7,11 @@ st.set_page_config(page_title="🏨 Hotel Management System", layout="wide")
 
 DATA_FILE = "hotel_data.csv"
 
-# ================== INITIALIZE DATA ==================
+# ================== LOAD OR INITIALIZE DATA ==================
 def load_data():
     if os.path.exists(DATA_FILE):
         return pd.read_csv(DATA_FILE)
     else:
-        # create base structure for 30 rooms
         rooms = []
         for i in range(1, 31):
             rooms.append({
@@ -47,20 +46,20 @@ rooms_df = st.session_state.rooms
 
 # ================== SIDEBAR MENU ==================
 st.sidebar.title("🏨 Hotel Menu")
-menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Available Rooms", "All Guests"])
+menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Check-Out", "Available Rooms", "All Guests"])
 
 # ================== DASHBOARD ==================
 if menu == "Dashboard":
     st.title("🏨 Hotel Management Dashboard")
 
     total_rooms = len(rooms_df)
-    occupied = (rooms_df["Status"] == "Occupied").sum()
+    occupied = (rooms_df["Status"].isin(["Occupied", "Booked"])).sum()
     available = total_rooms - occupied
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Rooms", total_rooms)
-    col2.metric("Occupied Rooms", occupied)
-    col3.metric("Available Rooms", available)
+    col2.metric("Occupied/Booked", occupied)
+    col3.metric("Available", available)
 
     st.dataframe(rooms_df)
 
@@ -68,7 +67,6 @@ if menu == "Dashboard":
 elif menu == "Register Guest":
     st.title("🧾 Register a New Guest")
 
-    # show all rooms (even occupied), since user might book for future
     room_number = st.selectbox("Select Room Number", rooms_df["Room Number"].tolist())
 
     guest_name = st.text_input("Guest Name")
@@ -87,11 +85,11 @@ elif menu == "Register Guest":
 
     if st.button("Register Guest"):
         idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+        status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
 
-        # update info (but allow booking for future even if room used)
         rooms_df.loc[idx, :] = [
             room_number,
-            "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked",
+            status,
             guest_name,
             guest_id,
             address,
@@ -107,9 +105,44 @@ elif menu == "Register Guest":
 
         save_data(rooms_df)
         st.session_state.rooms = rooms_df
-
         st.success(f"✅ Guest {guest_name} registered for Room {room_number}.")
         st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
+
+# ================== CHECK-OUT ==================
+elif menu == "Check-Out":
+    st.title("🚪 Guest Check-Out")
+
+    occupied_rooms = rooms_df[rooms_df["Status"].isin(["Occupied", "Booked"])]["Room Number"].tolist()
+    if not occupied_rooms:
+        st.info("✅ No guests to check out right now.")
+    else:
+        room_number = st.selectbox("Select Room to Check Out", occupied_rooms)
+        guest_data = rooms_df[rooms_df["Room Number"] == room_number].iloc[0]
+
+        st.write(f"**Guest Name:** {guest_data['Guest Name']}")
+        st.write(f"**Check-in:** {guest_data['Check-in Date']}")
+        st.write(f"**Check-out:** {guest_data['Check-out Date']}")
+        st.write(f"**Total Cost:** {guest_data['Total Cost']} EGP")
+        st.write(f"**Paid:** {guest_data['Paid']} EGP")
+        st.write(f"**Remaining:** {guest_data['Remaining']} EGP")
+
+        add_payment = st.number_input("Add Payment (EGP)", min_value=0.0, step=100.0)
+
+        if st.button("Confirm Check-Out"):
+            idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+            new_paid = guest_data["Paid"] + add_payment
+            new_remaining = guest_data["Total Cost"] - new_paid
+
+            if new_remaining > 0:
+                st.warning(f"⚠️ Guest still owes {new_remaining:.2f} EGP.")
+            else:
+                # clear room info
+                rooms_df.loc[idx, :] = [
+                    room_number, "Available", "", "", "", "", "", 0, "", "", 0.0, 0.0, 0.0
+                ]
+                save_data(rooms_df)
+                st.session_state.rooms = rooms_df
+                st.success(f"✅ Room {room_number} checked out successfully!")
 
 # ================== AVAILABLE ROOMS ==================
 elif menu == "Available Rooms":
