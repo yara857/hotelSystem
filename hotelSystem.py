@@ -1,73 +1,82 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
-st.set_page_config(page_title="Hotel Management System", layout="wide")
+st.set_page_config(page_title="🏨 Hotel Management System", layout="wide")
 
-# === Initialize Current Rooms Data ===
+DATA_FILE = "hotel_data.csv"
+
+# ================== INITIALIZE DATA ==================
+def load_data():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    else:
+        # create base structure for 30 rooms
+        rooms = []
+        for i in range(1, 31):
+            rooms.append({
+                "Room Number": i,
+                "Status": "Available",
+                "Guest Name": "",
+                "ID/Passport": "",
+                "Address": "",
+                "Job": "",
+                "Nationality": "",
+                "Nights": 0,
+                "Check-in Date": "",
+                "Check-out Date": "",
+                "Paid": 0.0,
+                "Total Cost": 0.0,
+                "Remaining": 0.0
+            })
+        df = pd.DataFrame(rooms)
+        df.to_csv(DATA_FILE, index=False)
+        return df
+
+
+def save_data(df):
+    df.to_csv(DATA_FILE, index=False)
+
+
+# Load or initialize data
 if "rooms" not in st.session_state:
-    st.session_state.rooms = pd.DataFrame({
-        "Room Number": list(range(1, 31)),
-        "Status": ["Available"] * 30,
-        "Guest Name": [None] * 30,
-        "ID/Passport": [None] * 30,
-        "Address": [None] * 30,
-        "Job": [None] * 30,
-        "Nationality": [None] * 30,
-        "Nights": [None] * 30,
-        "Check-in": [None] * 30,
-        "Check-out": [None] * 30,
-        "Paid": [0.0] * 30,
-        "Total": [0.0] * 30,
-        "Remaining": [0.0] * 30,
-    })
-
-# === Initialize Reservations (future bookings) ===
-if "reservations" not in st.session_state:
-    st.session_state.reservations = pd.DataFrame(columns=[
-        "Room Number", "Guest Name", "ID/Passport", "Address", "Job", "Nationality",
-        "Check-in", "Check-out", "Nights", "Total", "Paid", "Remaining"
-    ])
+    st.session_state.rooms = load_data()
 
 rooms_df = st.session_state.rooms
-reservations_df = st.session_state.reservations
 
-# === Sidebar Menu ===
-st.sidebar.header("🏨 Hotel System Menu")
-menu = st.sidebar.radio("Choose an action:", [
-    "View Available Rooms",
-    "Register / Reserve Guest",
-    "Check-out Guest",
-    "View Future Reservations"
-])
+# ================== SIDEBAR MENU ==================
+st.sidebar.title("🏨 Hotel Menu")
+menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Available Rooms", "All Guests"])
 
-# === View Available Rooms ===
-if menu == "View Available Rooms":
-    st.subheader("📋 Current Room Status")
+# ================== DASHBOARD ==================
+if menu == "Dashboard":
+    st.title("🏨 Hotel Management Dashboard")
 
-    available = rooms_df[rooms_df["Status"] == "Available"]
-    occupied = rooms_df[rooms_df["Status"] == "Occupied"]
+    total_rooms = len(rooms_df)
+    occupied = (rooms_df["Status"] == "Occupied").sum()
+    available = total_rooms - occupied
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Available Rooms", len(available))
-        st.dataframe(available[["Room Number"]], use_container_width=True)
-    with col2:
-        st.metric("Occupied Rooms", len(occupied))
-        st.dataframe(occupied[["Room Number", "Guest Name", "Check-out"]], use_container_width=True)
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Rooms", total_rooms)
+    col2.metric("Occupied Rooms", occupied)
+    col3.metric("Available Rooms", available)
 
-# === Register / Reserve Guest ===
-elif menu == "Register / Reserve Guest":
-    st.subheader("🧾 Register or Reserve a Room")
+    st.dataframe(rooms_df)
 
-    all_rooms = rooms_df["Room Number"].tolist()
-    room_number = st.selectbox("Select Room Number", all_rooms)
+# ================== REGISTER GUEST ==================
+elif menu == "Register Guest":
+    st.title("🧾 Register a New Guest")
+
+    # show all rooms (even occupied), since user might book for future
+    room_number = st.selectbox("Select Room Number", rooms_df["Room Number"].tolist())
+
     guest_name = st.text_input("Guest Name")
     guest_id = st.text_input("ID or Passport Number")
     address = st.text_input("Address")
     job = st.text_input("Job")
     nationality = st.text_input("Nationality")
-    nights = st.number_input("Number of Nights", min_value=1, max_value=30, step=1)
+    nights = st.number_input("Number of Nights", min_value=1, max_value=60, step=1)
     checkin_date = st.date_input("Check-in Date", datetime.today())
     checkout_date = checkin_date + timedelta(days=int(nights))
     st.info(f"🗓️ Check-out Date: **{checkout_date.strftime('%Y-%m-%d')}**")
@@ -76,114 +85,46 @@ elif menu == "Register / Reserve Guest":
     paid = st.number_input("Paid Amount (EGP)", min_value=0.0, step=100.0)
     remaining = total_price - paid
 
-    if st.button("Save Booking"):
-        if not guest_name or not guest_id:
-            st.error("Please fill in all required fields (Name and ID/Passport).")
-        else:
-            current_room = rooms_df.loc[rooms_df["Room Number"] == room_number].iloc[0]
+    if st.button("Register Guest"):
+        idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
 
-            # Check if room is available for the selected period
-            room_available = True
-            if current_room["Status"] == "Occupied" and current_room["Check-out"]:
-                current_checkout = datetime.strptime(current_room["Check-out"], "%Y-%m-%d")
-                if checkin_date <= current_checkout:
-                    room_available = False
+        # update info (but allow booking for future even if room used)
+        rooms_df.loc[idx, :] = [
+            room_number,
+            "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked",
+            guest_name,
+            guest_id,
+            address,
+            job,
+            nationality,
+            nights,
+            checkin_date.strftime("%Y-%m-%d"),
+            checkout_date.strftime("%Y-%m-%d"),
+            paid,
+            total_price,
+            remaining
+        ]
 
-            if room_available:
-                # If check-in is today or earlier -> occupy room now
-                if checkin_date <= datetime.today().date():
-                    idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-                    st.session_state.rooms.loc[idx, :] = [
-                        room_number,
-                        "Occupied",
-                        guest_name,
-                        guest_id,
-                        address,
-                        job,
-                        nationality,
-                        nights,
-                        checkin_date.strftime("%Y-%m-%d"),
-                        checkout_date.strftime("%Y-%m-%d"),
-                        paid,
-                        total_price,
-                        remaining
-                    ]
-                    st.success(f"✅ Guest {guest_name} checked into Room {room_number}.")
-                else:
-                    # Save as future reservation
-                    new_res = {
-                        "Room Number": room_number,
-                        "Guest Name": guest_name,
-                        "ID/Passport": guest_id,
-                        "Address": address,
-                        "Job": job,
-                        "Nationality": nationality,
-                        "Check-in": checkin_date.strftime("%Y-%m-%d"),
-                        "Check-out": checkout_date.strftime("%Y-%m-%d"),
-                        "Nights": nights,
-                        "Total": total_price,
-                        "Paid": paid,
-                        "Remaining": remaining
-                    }
-                    st.session_state.reservations = pd.concat(
-                        [st.session_state.reservations, pd.DataFrame([new_res])],
-                        ignore_index=True
-                    )
-                    st.success(f"📅 Reservation saved for Room {room_number} ({guest_name}) on {checkin_date}.")
-            else:
-                st.error(f"❌ Room {room_number} is occupied until {current_room['Check-out']}.")
+        save_data(rooms_df)
+        st.session_state.rooms = rooms_df
 
-# === Check-out Guest ===
-elif menu == "Check-out Guest":
-    st.subheader("🚪 Check-out Guest")
-    occupied_rooms = rooms_df[rooms_df["Status"] == "Occupied"]["Room Number"].tolist()
+        st.success(f"✅ Guest {guest_name} registered for Room {room_number}.")
+        st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
 
-    if not occupied_rooms:
-        st.info("No guests currently checked in.")
-    else:
-        room_number = st.selectbox("Select Room to Check-out", occupied_rooms)
-        guest_info = rooms_df.loc[rooms_df["Room Number"] == room_number].iloc[0]
+# ================== AVAILABLE ROOMS ==================
+elif menu == "Available Rooms":
+    st.title("🟩 Available Rooms")
 
-        st.write(f"**Guest Name:** {guest_info['Guest Name']}")
-        st.write(f"**Check-in:** {guest_info['Check-in']}")
-        st.write(f"**Check-out:** {guest_info['Check-out']}")
-        st.write(f"**Remaining Balance:** {guest_info['Remaining']} EGP")
+    today = datetime.today().date()
+    available_now = rooms_df[
+        (rooms_df["Status"] == "Available") |
+        (pd.to_datetime(rooms_df["Check-out Date"], errors='coerce').dt.date < today)
+    ]
 
-        if st.button("Confirm Check-out"):
-            idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-            st.session_state.rooms.loc[idx, :] = [
-                room_number,
-                "Available",
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                0.0,
-                0.0,
-                0.0
-            ]
-            st.success(f"✅ Room {room_number} is now available again.")
+    st.write(f"Currently available rooms: **{len(available_now)}**")
+    st.dataframe(available_now[["Room Number", "Status", "Guest Name", "Check-out Date"]])
 
-# === View Future Reservations ===
-elif menu == "View Future Reservations":
-    st.subheader("📅 Future Reservations")
-
-    if len(reservations_df) == 0:
-        st.info("No future reservations found.")
-    else:
-        st.dataframe(reservations_df, use_container_width=True)
-
-# === Visualization (Summary Dashboard) ===
-st.markdown("---")
-st.subheader("📊 Room Summary Overview")
-
-col1, col2 = st.columns(2)
-with col1:
-    st.bar_chart(rooms_df["Status"].value_counts())
-with col2:
-    st.metric("Total Future Reservations", len(reservations_df))
-    st.dataframe(rooms_df, use_container_width=True)
+# ================== ALL GUESTS ==================
+elif menu == "All Guests":
+    st.title("👥 All Guests Records")
+    st.dataframe(rooms_df)
