@@ -90,21 +90,20 @@ elif menu == "Register Guest":
         existing_checkin = rooms_df.loc[idx, "Check-in Date"]
         existing_checkout = rooms_df.loc[idx, "Check-out Date"]
 
+        overlap = False
         if existing_checkin and existing_checkout:
             try:
                 existing_checkin = datetime.strptime(existing_checkin, "%Y-%m-%d").date()
                 existing_checkout = datetime.strptime(existing_checkout, "%Y-%m-%d").date()
-                # Overlap rule: if new checkin < existing checkout and new checkout > existing checkin
+                # Only conflict if periods overlap
                 overlap = (checkin_date < existing_checkout) and (checkout_date > existing_checkin)
             except Exception:
                 overlap = False
-        else:
-            overlap = False
 
         if rooms_df.loc[idx, "Status"] in ["Occupied", "Booked"] and overlap:
             st.error("⚠️ This room is already booked or occupied during that period!")
         else:
-            # Assign booking
+            # ✅ Allow booking if no overlap (even if current guest still there)
             status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
 
             rooms_df.loc[idx, :] = [
