@@ -148,10 +148,11 @@ elif menu == "Check-Out":
 elif menu == "Available Rooms":
     st.title("🟩 Available Rooms")
 
-    today = datetime.today().date()
+    today = pd.Timestamp(datetime.today().date())
+    checkout_dates = pd.to_datetime(rooms_df["Check-out Date"], errors='coerce')
     available_now = rooms_df[
         (rooms_df["Status"] == "Available") |
-        (pd.to_datetime(rooms_df["Check-out Date"], errors='coerce').dt.date < today)
+        (checkout_dates < today)
     ]
 
     st.write(f"Currently available rooms: **{len(available_now)}**")
@@ -161,3 +162,4 @@ elif menu == "Available Rooms":
 elif menu == "All Guests":
     st.title("👥 All Guests Records")
     st.dataframe(rooms_df)
+
