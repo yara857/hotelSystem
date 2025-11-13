@@ -1,3 +1,4 @@
+# hotel_system.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -5,69 +6,128 @@ import os
 
 st.set_page_config(page_title="🏨 Hotel Management System", layout="wide")
 
-DATA_FILE = "hotel_data.csv"
+ROOMS_FILE = "rooms_data.csv"
+RES_FILE = "reservations.csv"
 
-# ================== LOAD OR INITIALIZE DATA ==================
-def load_data():
-    if os.path.exists(DATA_FILE):
-        return pd.read_csv(DATA_FILE)
-    else:
-        rooms = []
-        for i in range(1, 31):
-            rooms.append({
-                "Room Number": i,
-                "Status": "Available",
-                "Guest Name": "",
-                "ID/Passport": "",
-                "Address": "",
-                "Job": "",
-                "Nationality": "",
-                "Nights": 0,
-                "Check-in Date": "",
-                "Check-out Date": "",
-                "Paid": 0.0,
-                "Total Cost": 0.0,
-                "Remaining": 0.0
-            })
-        df = pd.DataFrame(rooms)
-        df.to_csv(DATA_FILE, index=False)
-        return df
+def init_rooms_file():
+    rooms = []
+    for i in range(1, 31):
+        rooms.append({
+            "Room Number": i,
+            "Status": "Available",   # Available or Occupied
+            "Guest Name": "",
+            "ID/Passport": "",
+            "Address": "",
+            "Job": "",
+            "Nationality": "",
+            "Nights": 0,
+            "Check-in Date": "",
+            "Check-out Date": "",
+            "Paid": 0.0,
+            "Total Cost": 0.0,
+            "Remaining": 0.0
+        })
+    df = pd.DataFrame(rooms)
+    df.to_csv(ROOMS_FILE, index=False)
+    return df
 
+def init_res_file():
+    df = pd.DataFrame(columns=[
+        "Reservation ID", "Room Number", "Guest Name", "ID/Passport", "Address", "Job", "Nationality",
+        "Nights", "Check-in Date", "Check-out Date", "Paid", "Total Cost", "Remaining"
+    ])
+    df.to_csv(RES_FILE, index=False)
+    return df
 
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+def load_rooms():
+    if not os.path.exists(ROOMS_FILE):
+        return init_rooms_file()
+    df = pd.read_csv(ROOMS_FILE, dtype={"Room Number": int})
+    return df
 
+def load_reservations():
+    if not os.path.exists(RES_FILE):
+        return init_res_file()
+    df = pd.read_csv(RES_FILE)
+    # Ensure Reservation ID exists (integer)
+    if "Reservation ID" not in df.columns:
+        df.insert(0, "Reservation ID", range(1, len(df) + 1))
+    return df
 
-# Load or initialize data
+def save_rooms(df):
+    df.to_csv(ROOMS_FILE, index=False)
+
+def save_reservations(df):
+    df.to_csv(RES_FILE, index=False)
+
+# Load data into session_state
 if "rooms" not in st.session_state:
-    st.session_state.rooms = load_data()
+    st.session_state.rooms = load_rooms()
+if "reservations" not in st.session_state:
+    st.session_state.reservations = load_reservations()
 
 rooms_df = st.session_state.rooms
+res_df = st.session_state.reservations
 
-# ================== SIDEBAR MENU ==================
+# Helper functions
+def parse_date(s):
+    if pd.isna(s) or s == "":
+        return None
+    try:
+        return pd.to_datetime(s).date()
+    except Exception:
+        return None
+
+def overlap_period(start_a, end_a, start_b, end_b):
+    """Return True if [start_a, end_a) overlaps [start_b, end_b) using dates."""
+    if start_a is None or end_a is None or start_b is None or end_b is None:
+        return False
+    return (start_a < end_b) and (end_a > start_b)
+
+def next_reservation_for_room(room_number):
+    """Return earliest reservation row for a room (as Series) or None."""
+    df = st.session_state.reservations.copy()
+    if df.empty:
+        return None
+    df_room = df[df["Room Number"] == int(room_number)].copy()
+    if df_room.empty:
+        return None
+    df_room["Check-in Date"] = pd.to_datetime(df_room["Check-in Date"], errors='coerce')
+    df_room = df_room.sort_values("Check-in Date")
+    return df_room.iloc[0]
+
+def remove_reservation_by_id(res_id):
+    df = st.session_state.reservations
+    st.session_state.reservations = df[df["Reservation ID"] != res_id].reset_index(drop=True)
+    save_reservations(st.session_state.reservations)
+
+# Sidebar menu
 st.sidebar.title("🏨 Hotel Menu")
-menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Check-Out", "Analytics"])
+menu = st.sidebar.radio("Select Action", ["Dashboard", "Register Guest", "Check-Out", "Analytics", "Reservations"])
 
-# ================== DASHBOARD ==================
+# Dashboard
 if menu == "Dashboard":
-    st.title("🏨 Hotel Management Dashboard")
-
-    total_rooms = len(rooms_df)
+    st.title("🏨 Hotel Dashboard")
+    rooms_df = st.session_state.rooms
+    total = len(rooms_df)
     occupied = (rooms_df["Status"] == "Occupied").sum()
-    booked = (rooms_df["Status"] == "Booked").sum()
-    available = total_rooms - occupied - booked
+    available = (rooms_df["Status"] == "Available").sum()
+    res_count = len(st.session_state.reservations)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Rooms", total_rooms)
-    col2.metric("Occupied", occupied)
-    col3.metric("Booked (Future)", booked)
-    col4.metric("Available", available)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Rooms", total)
+    c2.metric("Occupied Now", occupied)
+    c3.metric("Future Reservations", res_count)
 
+    st.markdown("#### Current Rooms Table")
     st.dataframe(rooms_df)
 
-# ================== REGISTER GUEST ==================
+# Register Guest
 elif menu == "Register Guest":
-    st.title("🧾 Register a New Guest")
+    st.title("🧾 Register / Reserve a Guest")
+
+    rooms_df = st.session_state.rooms
+    res_df = st.session_state.reservations
 
     room_number = st.selectbox("Select Room Number", rooms_df["Room Number"].tolist())
 
@@ -76,139 +136,238 @@ elif menu == "Register Guest":
     address = st.text_input("Address")
     job = st.text_input("Job")
     nationality = st.text_input("Nationality")
-    nights = st.number_input("Number of Nights", min_value=1, max_value=60, step=1)
-    checkin_date = st.date_input("Check-in Date", datetime.today())
-    checkout_date = checkin_date + timedelta(days=int(nights))
-    st.info(f"🗓️ Check-out Date: **{checkout_date.strftime('%Y-%m-%d')}**")
 
-    total_price = st.number_input("Total Cost (EGP)", min_value=0.0, step=100.0)
-    paid = st.number_input("Paid Amount (EGP)", min_value=0.0, step=100.0)
+    nights = st.number_input("Number of Nights", min_value=1, max_value=365, value=1, step=1)
+    checkin_date = st.date_input("Check-in Date", datetime.today())
+    checkout_date = st.date_input("Check-out Date", checkin_date + timedelta(days=nights))
+    # Keep checkout dynamic if user changes nights
+    # (we show both but allow user to choose)
+    st.info(f"Calculated checkout (checkin + nights): {(checkin_date + timedelta(days=nights)).strftime('%Y-%m-%d')}")
+
+    total_price = st.number_input("Total Cost (EGP)", min_value=0.0, step=1.0)
+    paid = st.number_input("Paid Amount (EGP)", min_value=0.0, step=1.0)
     remaining = total_price - paid
 
-    if st.button("Register Guest"):
-        idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-
-        # === 🧠 Check for overlapping booking ===
-        existing_checkin = rooms_df.loc[idx, "Check-in Date"]
-        existing_checkout = rooms_df.loc[idx, "Check-out Date"]
-
-        overlap = False
-        if existing_checkin and existing_checkout:
-            try:
-                existing_checkin = datetime.strptime(existing_checkin, "%Y-%m-%d").date()
-                existing_checkout = datetime.strptime(existing_checkout, "%Y-%m-%d").date()
-                overlap = (checkin_date < existing_checkout) and (checkout_date > existing_checkin)
-            except Exception:
-                overlap = False
-
-        if rooms_df.loc[idx, "Status"] in ["Occupied", "Booked"] and overlap:
-            st.error("⚠️ This room is already booked or occupied during that period!")
+    if st.button("Save Booking"):
+        if not guest_name.strip() or not guest_id.strip():
+            st.error("Please enter Guest Name and ID/Passport.")
         else:
-            status = "Occupied" if checkin_date <= datetime.today().date() <= checkout_date else "Booked"
+            # Check overlaps against current occupant (if any) and existing reservations for this room
+            idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+            current_checkin = parse_date(rooms_df.loc[idx, "Check-in Date"])
+            current_checkout = parse_date(rooms_df.loc[idx, "Check-out Date"])
+            new_start = checkin_date
+            new_end = checkout_date
 
-            rooms_df.loc[idx, :] = [
-                room_number,
-                status,
-                guest_name,
-                guest_id,
-                address,
-                job,
-                nationality,
-                nights,
-                checkin_date.strftime("%Y-%m-%d"),
-                checkout_date.strftime("%Y-%m-%d"),
-                paid,
-                total_price,
-                remaining
-            ]
+            conflict = False
+            conflict_msgs = []
 
-            save_data(rooms_df)
-            st.session_state.rooms = rooms_df
-            st.success(f"✅ Guest {guest_name} registered for Room {room_number}.")
-            st.metric("Remaining to Pay", f"{remaining:.2f} EGP")
+            # 1) Check against current occupant (if room is Occupied)
+            if rooms_df.loc[idx, "Status"] == "Occupied" and current_checkin and current_checkout:
+                if overlap_period(new_start, new_end, current_checkin, current_checkout):
+                    conflict = True
+                    conflict_msgs.append(f"Conflicts with current occupant from {current_checkin} to {current_checkout}.")
 
-# ================== CHECK-OUT ==================
+            # 2) Check against existing reservations for the same room
+            # Convert reservation dates to date and iterate
+            for _, r in res_df[res_df["Room Number"] == int(room_number)].iterrows():
+                r_start = parse_date(r["Check-in Date"])
+                r_end = parse_date(r["Check-out Date"])
+                if overlap_period(new_start, new_end, r_start, r_end):
+                    conflict = True
+                    conflict_msgs.append(f"Conflicts with existing reservation (ID {r['Reservation ID']}) from {r_start} to {r_end}.")
+
+            if conflict:
+                st.error("⚠️ Booking conflict detected. " + " ".join(conflict_msgs))
+            else:
+                today = datetime.today().date()
+                # If checkin is today or earlier -> occupy now
+                if new_start <= today:
+                    # assign as current occupant (do NOT touch reservations)
+                    status = "Occupied"
+                    rooms_df.loc[idx, :] = [
+                        room_number,
+                        status,
+                        guest_name,
+                        guest_id,
+                        address,
+                        job,
+                        nationality,
+                        nights,
+                        new_start.strftime("%Y-%m-%d"),
+                        new_end.strftime("%Y-%m-%d"),
+                        paid,
+                        total_price,
+                        remaining
+                    ]
+                    save_rooms(rooms_df)
+                    st.session_state.rooms = rooms_df
+                    st.success(f"✅ Guest '{guest_name}' checked in to room {room_number}.")
+                else:
+                    # Save as future reservation (append to reservations table)
+                    res_df = st.session_state.reservations
+                    new_id = 1
+                    if not res_df.empty:
+                        # ensure integer Reservation ID
+                        existing_ids = pd.to_numeric(res_df["Reservation ID"], errors='coerce').dropna().astype(int)
+                        if not existing_ids.empty:
+                            new_id = int(existing_ids.max()) + 1
+                    new_res = {
+                        "Reservation ID": new_id,
+                        "Room Number": int(room_number),
+                        "Guest Name": guest_name,
+                        "ID/Passport": guest_id,
+                        "Address": address,
+                        "Job": job,
+                        "Nationality": nationality,
+                        "Nights": int(nights),
+                        "Check-in Date": new_start.strftime("%Y-%m-%d"),
+                        "Check-out Date": new_end.strftime("%Y-%m-%d"),
+                        "Paid": float(paid),
+                        "Total Cost": float(total_price),
+                        "Remaining": float(remaining)
+                    }
+                    st.session_state.reservations = pd.concat([res_df, pd.DataFrame([new_res])], ignore_index=True)
+                    save_reservations(st.session_state.reservations)
+                    st.success(f"📅 Reservation saved for room {room_number} from {new_start} to {new_end} (ID {new_id}).")
+
+# Check-Out
 elif menu == "Check-Out":
-    st.title("🚪 Guest Check-Out")
+    st.title("🚪 Check-Out")
 
-    occupied_rooms = rooms_df[rooms_df["Status"].isin(["Occupied", "Booked"])]["Room Number"].tolist()
-    if not occupied_rooms:
-        st.info("✅ No guests to check out right now.")
+    rooms_df = st.session_state.rooms
+    occ_rooms = rooms_df[rooms_df["Status"] == "Occupied"]["Room Number"].tolist()
+
+    if not occ_rooms:
+        st.info("No currently occupied rooms.")
     else:
-        room_number = st.selectbox("Select Room to Check Out", occupied_rooms)
-        guest_data = rooms_df[rooms_df["Room Number"] == room_number].iloc[0]
+        room_number = st.selectbox("Select occupied room to check out", occ_rooms)
+        idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+        guest_row = rooms_df.loc[idx]
 
-        st.write(f"**Guest Name:** {guest_data['Guest Name']}")
-        st.write(f"**Check-in:** {guest_data['Check-in Date']}")
-        st.write(f"**Check-out:** {guest_data['Check-out Date']}")
-        st.write(f"**Total Cost:** {guest_data['Total Cost']} EGP")
-        st.write(f"**Paid:** {guest_data['Paid']} EGP")
-        st.write(f"**Remaining:** {guest_data['Remaining']} EGP")
+        st.write("**Guest**:", guest_row["Guest Name"])
+        st.write("**Check-in**:", guest_row["Check-in Date"])
+        st.write("**Check-out**:", guest_row["Check-out Date"])
+        st.write("**Total**:", guest_row["Total Cost"])
+        st.write("**Paid**:", guest_row["Paid"])
+        st.write("**Remaining**:", guest_row["Remaining"])
 
-        add_payment = st.number_input("Add Payment (EGP)", min_value=0.0, step=100.0)
+        add_payment = st.number_input("Add payment (EGP)", min_value=0.0, step=1.0, value=0.0)
 
         if st.button("Confirm Check-Out"):
-            idx = rooms_df.index[rooms_df["Room Number"] == room_number][0]
-            new_paid = guest_data["Paid"] + add_payment
-            new_remaining = guest_data["Total Cost"] - new_paid
-
+            new_paid = float(guest_row["Paid"]) + float(add_payment)
+            new_remaining = float(guest_row["Total Cost"]) - new_paid
             if new_remaining > 0:
-                st.warning(f"⚠️ Guest still owes {new_remaining:.2f} EGP.")
+                st.warning(f"Guest still owes {new_remaining:.2f} EGP. Add full payment to clear and proceed.")
             else:
-                # Clear room info
+                # Clear current occupant
                 rooms_df.loc[idx, :] = [
                     room_number, "Available", "", "", "", "", "", 0, "", "", 0.0, 0.0, 0.0
                 ]
-                save_data(rooms_df)
+                save_rooms(rooms_df)
                 st.session_state.rooms = rooms_df
-                st.success(f"✅ Room {room_number} checked out successfully!")
+                st.success(f"Room {room_number} checked out and set to Available.")
 
-# ================== ANALYTICS ==================
+                # Promote next reservation (if any) whose check-in is <= today (or earliest)
+                next_res = next_reservation_for_room(room_number)
+                if next_res is not None:
+                    res_id = next_res["Reservation ID"]
+                    res_checkin = parse_date(next_res["Check-in Date"])
+                    today = datetime.today().date()
+                    if res_checkin <= today:
+                        # move reservation to occupied
+                        st.info(f"Promoting reservation ID {res_id} to current occupant (check-in {res_checkin}).")
+                        rooms_df = st.session_state.rooms
+                        idx2 = rooms_df.index[rooms_df["Room Number"] == room_number][0]
+                        rooms_df.loc[idx2, :] = [
+                            room_number,
+                            "Occupied",
+                            next_res["Guest Name"],
+                            next_res["ID/Passport"],
+                            next_res["Address"],
+                            next_res["Job"],
+                            next_res["Nationality"],
+                            int(next_res["Nights"]),
+                            next_res["Check-in Date"],
+                            next_res["Check-out Date"],
+                            float(next_res["Paid"]),
+                            float(next_res["Total Cost"]),
+                            float(next_res["Remaining"])
+                        ]
+                        save_rooms(rooms_df)
+                        st.session_state.rooms = rooms_df
+                        # remove reservation
+                        remove_reservation_by_id(res_id)
+                        st.success(f"Reservation {res_id} promoted to Occupied for room {room_number}.")
+
+# Analytics
 elif menu == "Analytics":
     st.title("📊 Room Analytics")
+    rooms_df = st.session_state.rooms.copy()
+    res_df = st.session_state.reservations.copy()
 
-    today = datetime.today().date()
+    # normalize dates
     rooms_df["Check-in Date"] = pd.to_datetime(rooms_df["Check-in Date"], errors='coerce')
     rooms_df["Check-out Date"] = pd.to_datetime(rooms_df["Check-out Date"], errors='coerce')
+    res_df["Check-in Date"] = pd.to_datetime(res_df["Check-in Date"], errors='coerce')
+    res_df["Check-out Date"] = pd.to_datetime(res_df["Check-out Date"], errors='coerce')
 
-    # 1️⃣ Available Now
+    today = pd.Timestamp(datetime.today().date())
+
     available_now = rooms_df[
         (rooms_df["Status"] == "Available") |
-        (rooms_df["Check-out Date"] < pd.Timestamp(today))
+        (rooms_df["Check-out Date"] < today)
     ]
 
-    # 2️⃣ Currently Occupied
     occupied_now = rooms_df[
         (rooms_df["Status"] == "Occupied") &
-        (rooms_df["Check-in Date"] <= pd.Timestamp(today)) &
-        (rooms_df["Check-out Date"] >= pd.Timestamp(today))
+        (rooms_df["Check-in Date"] <= today) &
+        (rooms_df["Check-out Date"] >= today)
     ]
 
-    # 3️⃣ Future Bookings
-    future_bookings = rooms_df[
-        (rooms_df["Status"] == "Booked") &
-        (rooms_df["Check-in Date"] > pd.Timestamp(today))
-    ]
+    future_reservations = res_df[res_df["Check-in Date"] > today]
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🟩 Available Now", len(available_now))
-    col2.metric("🏠 Occupied Now", len(occupied_now))
-    col3.metric("📅 Future Bookings", len(future_bookings))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Available Now", len(available_now))
+    c2.metric("Occupied Now", len(occupied_now))
+    c3.metric("Future Reservations", len(future_reservations))
 
-    st.subheader("🟩 Available Rooms")
+    st.subheader("Available Rooms (Now)")
     st.dataframe(available_now[["Room Number", "Status", "Check-out Date"]])
 
-    st.subheader("🏠 Occupied Rooms")
+    st.subheader("Currently Occupied Rooms")
     st.dataframe(occupied_now[["Room Number", "Guest Name", "Check-in Date", "Check-out Date", "Remaining"]])
 
-    st.subheader("📅 Future Bookings")
-    st.dataframe(future_bookings[["Room Number", "Guest Name", "Check-in Date", "Check-out Date"]])
+    st.subheader("Future Reservations")
+    st.dataframe(future_reservations[["Reservation ID", "Room Number", "Guest Name", "Check-in Date", "Check-out Date", "Remaining"]])
 
     st.divider()
-    st.write("### Summary Statistics")
-    st.bar_chart(
-        pd.DataFrame({
-            "Rooms": ["Available", "Occupied", "Future Booked"],
-            "Count": [len(available_now), len(occupied_now), len(future_bookings)]
-        }).set_index("Rooms")
-    )
+    st.write("### Summary Chart")
+    chart_df = pd.DataFrame({
+        "State": ["Available", "Occupied", "Future Reservations"],
+        "Count": [len(available_now), len(occupied_now), len(future_reservations)]
+    }).set_index("State")
+    st.bar_chart(chart_df)
+
+# Reservations management (list + delete)
+elif menu == "Reservations":
+    st.title("📅 Manage Reservations")
+    res_df = st.session_state.reservations.copy()
+    if res_df.empty:
+        st.info("No future reservations.")
+    else:
+        res_df["Check-in Date"] = pd.to_datetime(res_df["Check-in Date"], errors='coerce')
+        res_df["Check-out Date"] = pd.to_datetime(res_df["Check-out Date"], errors='coerce')
+        st.dataframe(res_df.sort_values("Check-in Date").reset_index(drop=True))
+
+        st.markdown("#### Delete a reservation")
+        delete_id = st.number_input("Reservation ID to delete", min_value=1, step=1, value=0)
+        if st.button("Delete Reservation"):
+            if delete_id <= 0:
+                st.error("Enter a valid Reservation ID.")
+            else:
+                if delete_id in list(st.session_state.reservations["Reservation ID"].astype(int)):
+                    remove_reservation_by_id(delete_id)
+                    st.success(f"Reservation {delete_id} deleted.")
+                else:
+                    st.error("Reservation ID not found.")
